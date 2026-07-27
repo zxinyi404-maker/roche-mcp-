@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "让 AI 在聊天时自动判断何时需要联网，无需打开单独页面。支持搜索、浏览网页，未来可扩展小红书、推特等。",
   "author": "zxinyi404-maker",
-  "entry": "https://raw.githubusercontent.com/zxinyi404-maker/roche-auto-web/main/plugin.js",
+  "entry": "https://raw.githubusercontent.com/zxinyi404-maker/roche-mcp-/main/plugin.js",
   "hash": "",
   "permissions": [
     "ai:chat",
