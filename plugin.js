@@ -1,6 +1,6 @@
 /*
- * Roche 智能联网助手 v2.0
- * 让 AI 在正常聊天窗口自动判断何时需要联网，自动调用工具
+ * Roche 智能联网助手 v3.0
+ * 支持：DuckDuckGo、网页浏览、知乎、Reddit、YouTube、AO3
  *
  * 使用 Roche 标准 chat.tools API
  */
@@ -47,7 +47,24 @@
     return { status: resp.status, text: text };
   }
 
-  // 工具 1: 搜索
+  // 直接调用平台 API
+  async function callPlatformAPI(endpoint, params) {
+    if (!globalState.proxyUrl) {
+      throw new Error("未配置代理地址");
+    }
+
+    const baseUrl = globalState.proxyUrl.replace("/proxy", "");
+    const url = new URL(endpoint, baseUrl);
+
+    Object.keys(params).forEach(key => {
+      url.searchParams.append(key, params[key]);
+    });
+
+    const resp = await fetch(url.toString());
+    return await resp.json();
+  }
+
+  // 工具 1: DuckDuckGo 搜索
   async function toolWebSearch(query) {
     const searchUrl = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query);
 
@@ -147,6 +164,81 @@
     return { title: title.trim(), text: text };
   }
 
+  // 工具 3: 知乎搜索
+  async function toolZhihuSearch(query, type = "all") {
+    try {
+      const result = await callPlatformAPI("/api/zhihu/search", {
+        q: query,
+        type: type,
+        limit: 10,
+      });
+
+      if (!result.success) {
+        return { error: result.error || "搜索失败" };
+      }
+
+      return { results: result.results };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
+  // 工具 4: Reddit 搜索
+  async function toolRedditSearch(query, sort = "relevance") {
+    try {
+      const result = await callPlatformAPI("/api/reddit/search", {
+        q: query,
+        sort: sort,
+        limit: 10,
+      });
+
+      if (!result.success) {
+        return { error: result.error || "搜索失败" };
+      }
+
+      return { results: result.results };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
+  // 工具 5: YouTube 搜索
+  async function toolYouTubeSearch(query) {
+    try {
+      const result = await callPlatformAPI("/api/youtube/search", {
+        q: query,
+        limit: 10,
+      });
+
+      if (!result.success) {
+        return { error: result.error || "搜索失败" };
+      }
+
+      return { results: result.results };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
+  // 工具 6: AO3 搜索
+  async function toolAO3Search(query, sort = "relevance") {
+    try {
+      const result = await callPlatformAPI("/api/ao3/search", {
+        q: query,
+        sort: sort,
+        limit: 10,
+      });
+
+      if (!result.success) {
+        return { error: result.error || "搜索失败" };
+      }
+
+      return { results: result.results };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }
+
   // 工具函数
   function clampText(str, max) {
     str = String(str || "");
@@ -168,7 +260,7 @@
       globalState.initialized = true;
 
       if (globalState.proxyUrl && globalState.enabled) {
-        console.log("[智能联网助手] 已启用，AI 现在可以自动联网");
+        console.log("[智能联网助手] v3.0 已启用，支持 6 种搜索");
       } else {
         console.log("[智能联网助手] 未配置或未启用");
       }
@@ -184,51 +276,86 @@
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "智能联网助手",
-    version: "2.0.0",
+    version: "3.0.0",
 
     // 注入到主聊天的工具
     chat: {
-      // 所有会话都可用
       scope: {},
 
-      // 注册工具
       tools: [
         {
           id: "web_search",
-          description: "联网搜索（DuckDuckGo）。当需要最新信息、实时数据、不确定的事实时使用。参数：query（搜索关键词）",
-          parameters: {
-            query: "string",
-          },
+          description: "通用网页搜索（DuckDuckGo）。搜索最新信息、新闻、常规问题时使用。参数：query（搜索关键词）",
+          parameters: { query: "string" },
           async execute(args, ctx) {
             if (!globalState.enabled || !globalState.proxyUrl) {
-              return { error: "联网功能未启用或未配置代理" };
+              return { error: "联网功能未启用" };
             }
-
-            const query = String(args?.query || "").trim();
-            if (!query) {
-              return { error: "缺少搜索关键词" };
-            }
-
-            return await toolWebSearch(query);
+            return await toolWebSearch(String(args?.query || "").trim());
           },
         },
         {
           id: "open_page",
           description: "打开网页并读取正文。当需要阅读具体网页内容时使用。参数：url（网页地址）",
-          parameters: {
-            url: "string",
-          },
+          parameters: { url: "string" },
           async execute(args, ctx) {
             if (!globalState.enabled || !globalState.proxyUrl) {
-              return { error: "联网功能未启用或未配置代理" };
+              return { error: "联网功能未启用" };
             }
-
-            const url = String(args?.url || "").trim();
-            if (!url) {
-              return { error: "缺少网页地址" };
+            return await toolOpenPage(String(args?.url || "").trim());
+          },
+        },
+        {
+          id: "zhihu_search",
+          description: "搜索知乎内容（问题、回答、文章）。适合查找中文深度讨论和专业解答。参数：query（搜索关键词），type（可选：all/question/answer/article）",
+          parameters: { query: "string", type: "string" },
+          async execute(args, ctx) {
+            if (!globalState.enabled || !globalState.proxyUrl) {
+              return { error: "联网功能未启用" };
             }
-
-            return await toolOpenPage(url);
+            return await toolZhihuSearch(
+              String(args?.query || "").trim(),
+              args?.type || "all"
+            );
+          },
+        },
+        {
+          id: "reddit_search",
+          description: "搜索 Reddit 帖子和讨论。适合查找英文社区讨论、评测、经验分享。参数：query（搜索关键词），sort（可选：relevance/hot/top/new）",
+          parameters: { query: "string", sort: "string" },
+          async execute(args, ctx) {
+            if (!globalState.enabled || !globalState.proxyUrl) {
+              return { error: "联网功能未启用" };
+            }
+            return await toolRedditSearch(
+              String(args?.query || "").trim(),
+              args?.sort || "relevance"
+            );
+          },
+        },
+        {
+          id: "youtube_search",
+          description: "搜索 YouTube 视频。适合查找视频教程、评测、娱乐内容。参数：query（搜索关键词）",
+          parameters: { query: "string" },
+          async execute(args, ctx) {
+            if (!globalState.enabled || !globalState.proxyUrl) {
+              return { error: "联网功能未启用" };
+            }
+            return await toolYouTubeSearch(String(args?.query || "").trim());
+          },
+        },
+        {
+          id: "ao3_search",
+          description: "搜索 AO3 同人作品。适合查找小说、fanfic。参数：query（搜索关键词），sort（可选：relevance/kudos/hits/date）",
+          parameters: { query: "string", sort: "string" },
+          async execute(args, ctx) {
+            if (!globalState.enabled || !globalState.proxyUrl) {
+              return { error: "联网功能未启用" };
+            }
+            return await toolAO3Search(
+              String(args?.query || "").trim(),
+              args?.sort || "relevance"
+            );
           },
         },
       ],
@@ -241,34 +368,31 @@
         name: "联网设置",
         icon: "settings",
         async mount(container, roche) {
-          // 首次打开任何 app 时初始化全局状态
           await initGlobalState(roche);
 
           container.innerHTML = `
             <div class="roche-plugin-auto-web" style="display: flex; flex-direction: column; height: 100%; font-family: system-ui; color: #333; background: #f5f5f5;">
-              <!-- 顶部栏 -->
               <div style="display: flex; align-items: center; padding: 16px; background: white; border-bottom: 1px solid #e0e0e0; flex-shrink: 0;">
                 <button id="back-btn" style="padding: 8px 16px; background: #f0f0f0; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
                   ← 返回
                 </button>
-                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 - 设置</h2>
+                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 v3.0</h2>
               </div>
 
-              <!-- 内容区 -->
               <div style="flex: 1; overflow-y: auto; padding: 20px;">
                 <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
                   <label style="display: block; font-weight: 600; margin-bottom: 8px;">
-                    CORS 代理地址 *
+                    代理服务器地址 *
                   </label>
                   <input
                     id="proxy-input"
                     type="text"
-                    placeholder="https://你的代理.hf.space/proxy"
+                    placeholder="https://你的space.hf.space/proxy"
                     value="${globalState.proxyUrl}"
                     style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; box-sizing: border-box;"
                   />
                   <p style="margin: 8px 0 0; font-size: 13px; color: #666;">
-                    用于绕过浏览器跨域限制，必填。可复用 browser-mcp 的代理。
+                    必填。格式：https://用户名-项目名.hf.space/proxy
                   </p>
                 </div>
 
@@ -282,9 +406,6 @@
                     />
                     <span style="font-weight: 600;">启用联网功能</span>
                   </label>
-                  <p style="margin: 8px 0 0; font-size: 13px; color: #666;">
-                    关闭后 AI 将无法调用联网工具
-                  </p>
                 </div>
 
                 <button id="save-btn" style="width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 16px;">
@@ -292,38 +413,32 @@
                 </button>
 
                 <div style="background: #e8f5e9; border-radius: 12px; padding: 16px; margin-bottom: 16px;">
-                  <h3 style="margin: 0 0 12px; font-size: 16px; color: #2e7d32;">✅ 使用说明</h3>
+                  <h3 style="margin: 0 0 12px; font-size: 16px; color: #2e7d32;">✨ 支持的搜索</h3>
                   <ul style="margin: 0; padding-left: 20px; line-height: 1.8; font-size: 14px;">
-                    <li>启用后，AI 会在聊天时<strong>自动判断</strong>是否需要联网</li>
-                    <li>无需任何指令，AI 会主动搜索或浏览网页</li>
-                    <li>支持搜索（DuckDuckGo）和打开网页读正文</li>
-                    <li>所有操作在后台完成，聊天窗口正常显示</li>
+                    <li><strong>DuckDuckGo</strong> - 通用网页搜索</li>
+                    <li><strong>知乎</strong> - 中文问答和文章</li>
+                    <li><strong>Reddit</strong> - 英文社区讨论</li>
+                    <li><strong>YouTube</strong> - 视频搜索</li>
+                    <li><strong>AO3</strong> - 同人小说</li>
+                    <li><strong>网页浏览</strong> - 读取任意网页</li>
                   </ul>
                 </div>
 
                 <div style="background: #fff3cd; border-radius: 12px; padding: 16px; border-left: 4px solid #ffc107;">
-                  <h3 style="margin: 0 0 12px; font-size: 16px; color: #856404;">⚠️ 注意事项</h3>
-                  <ul style="margin: 0; padding-left: 20px; line-height: 1.8; font-size: 14px;">
-                    <li>AI 联网会消耗更多 tokens</li>
-                    <li>需要部署 CORS 代理（可用现有的 browser-mcp 代理）</li>
-                    <li>代理地址填错会导致工具调用失败</li>
-                    <li>DuckDuckGo 可能反爬，搜索失败时检查代理</li>
-                  </ul>
+                  <h3 style="margin: 0 0 12px; font-size: 16px; color: #856404;">💡 使用提示</h3>
+                  <p style="margin: 0; line-height: 1.8; font-size: 14px;">
+                    AI 会自动判断使用哪个搜索引擎。你只需要正常聊天，AI 会选择最合适的工具。
+                  </p>
                 </div>
               </div>
             </div>
           `;
 
-          // 返回按钮
-          container.querySelector("#back-btn").onclick = () => {
-            roche.ui.closeApp();
-          };
+          container.querySelector("#back-btn").onclick = () => roche.ui.closeApp();
 
-          // 保存按钮
           container.querySelector("#save-btn").onclick = async () => {
             const input = container.querySelector("#proxy-input");
             const checkbox = container.querySelector("#enabled-checkbox");
-
             const url = input.value.trim();
 
             if (!url) {
@@ -337,7 +452,7 @@
             await roche.storage.set("proxyUrl", url);
             await roche.storage.set("enabled", globalState.enabled);
 
-            roche.ui.toast("✅ 保存成功！AI 现在可以自动联网了");
+            roche.ui.toast("✅ 保存成功！");
           };
         },
         async unmount(container) {
