@@ -9,11 +9,11 @@
 
   const PLUGIN_ID = "auto-web";
 
-  // 全局状态
+  // 全局状态（跨 app 共享）
   let globalState = {
     proxyUrl: "",
     enabled: true,
-    roche: null,
+    initialized: false,
   };
 
   // ============================================================
@@ -154,6 +154,29 @@
     return str.slice(0, max) + "\n...[已截断]";
   }
 
+  // 初始化全局状态（只执行一次）
+  async function initGlobalState(roche) {
+    if (globalState.initialized) return;
+
+    try {
+      const savedProxy = await roche.storage.get("proxyUrl");
+      const savedEnabled = await roche.storage.get("enabled");
+
+      if (savedProxy) globalState.proxyUrl = savedProxy;
+      if (savedEnabled !== undefined) globalState.enabled = savedEnabled;
+
+      globalState.initialized = true;
+
+      if (globalState.proxyUrl && globalState.enabled) {
+        console.log("[智能联网助手] 已启用，AI 现在可以自动联网");
+      } else {
+        console.log("[智能联网助手] 未配置或未启用");
+      }
+    } catch (e) {
+      console.error("[智能联网助手] 初始化失败:", e);
+    }
+  }
+
   // ============================================================
   // 插件注册
   // ============================================================
@@ -211,25 +234,6 @@
       ],
     },
 
-    // 插件初始化
-    async onLoad(roche) {
-      globalState.roche = roche;
-
-      // 读取配置
-      try {
-        const saved = await roche.storage.get("proxyUrl");
-        if (saved) globalState.proxyUrl = saved;
-      } catch (e) {}
-
-      // 如果没有配置代理，不提示（用户可以手动打开设置）
-      if (!globalState.proxyUrl) {
-        globalState.enabled = false;
-        console.log("[智能联网助手] 未配置代理，工具不可用");
-      } else {
-        console.log("[智能联网助手] 已启用，AI 现在可以自动联网");
-      }
-    },
-
     // 设置界面
     apps: [
       {
@@ -237,6 +241,9 @@
         name: "联网设置",
         icon: "settings",
         async mount(container, roche) {
+          // 首次打开任何 app 时初始化全局状态
+          await initGlobalState(roche);
+
           container.innerHTML = `
             <div class="roche-plugin-auto-web" style="display: flex; flex-direction: column; height: 100%; font-family: system-ui; color: #333; background: #f5f5f5;">
               <!-- 顶部栏 -->
