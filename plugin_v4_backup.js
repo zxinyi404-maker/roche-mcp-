@@ -1,7 +1,7 @@
 /*
- * Roche 智能联网助手 v6.0
+ * Roche 智能联网助手 v4.0
  * 支持：DuckDuckGo、网页浏览、知乎、Reddit、YouTube、AO3
- * 功能：AI自动调用、缓存、历史记录、统计、自定义搜索引擎
+ * 新增：缓存、历史记录、统计、自定义搜索引擎
  *
  * 使用 Roche 标准 chat.tools API
  */
@@ -385,7 +385,7 @@
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "智能联网助手",
-    version: "6.0.0",
+    version: "4.0.0",
 
     chat: {
       scope: {},
