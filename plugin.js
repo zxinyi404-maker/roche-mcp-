@@ -181,23 +181,27 @@
 
   // 工具 1: DuckDuckGo 搜索
   async function toolWebSearch(query) {
-    const searchUrl = "https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query);
-
     try {
-      const r = await proxyFetch(searchUrl, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-      });
+      // 使用代理服务器的 DuckDuckGo API（更可靠）
+      const baseUrl = globalState.proxyUrl.replace("/proxy", "");
+      const apiUrl = `${baseUrl}/api/duckduckgo?q=${encodeURIComponent(query)}`;
 
-      const results = parseDuckResults(r.text).slice(0, 6);
-      if (!results.length) {
+      const resp = await fetch(apiUrl);
+      if (!resp.ok) {
+        throw new Error(`搜索失败: ${resp.status}`);
+      }
+
+      const data = await resp.json();
+
+      if (!data.results || data.results.length === 0) {
         return { error: "未找到搜索结果" };
       }
 
       return {
-        results: results.map(r => ({
+        results: data.results.slice(0, 6).map(r => ({
           title: r.title,
           url: r.url,
-          snippet: r.snippet,
+          snippet: r.snippet || r.description || "",
         })),
       };
     } catch (e) {
