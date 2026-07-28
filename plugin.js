@@ -86,10 +86,13 @@
 
   async function persistState(roche) {
     try {
-      await roche.storage.set("cache", globalState.cache);
-      await roche.storage.set("history", globalState.history);
-      await roche.storage.set("stats", globalState.stats);
-      await roche.storage.set("customEngines", globalState.customEngines);
+      await roche.storage.set(`${PLUGIN_ID}:cache`, globalState.cache);
+      await roche.storage.set(`${PLUGIN_ID}:history`, globalState.history);
+      await roche.storage.set(`${PLUGIN_ID}:stats`, globalState.stats);
+      await roche.storage.set(`${PLUGIN_ID}:customEngines`, globalState.customEngines);
+      await roche.storage.set(`${PLUGIN_ID}:proxyUrl`, globalState.proxyUrl);
+      await roche.storage.set(`${PLUGIN_ID}:enabled`, globalState.enabled);
+      await roche.storage.set(`${PLUGIN_ID}:enableCache`, globalState.enableCache);
     } catch (e) {
       console.error("[持久化失败]", e);
     }
@@ -350,13 +353,13 @@
     if (globalState.initialized) return;
 
     try {
-      const savedProxy = await roche.storage.get("proxyUrl");
-      const savedEnabled = await roche.storage.get("enabled");
-      const savedEnableCache = await roche.storage.get("enableCache");
-      const savedCache = await roche.storage.get("cache");
-      const savedHistory = await roche.storage.get("history");
-      const savedStats = await roche.storage.get("stats");
-      const savedCustomEngines = await roche.storage.get("customEngines");
+      const savedProxy = await roche.storage.get(`${PLUGIN_ID}:proxyUrl`);
+      const savedEnabled = await roche.storage.get(`${PLUGIN_ID}:enabled`);
+      const savedEnableCache = await roche.storage.get(`${PLUGIN_ID}:enableCache`);
+      const savedCache = await roche.storage.get(`${PLUGIN_ID}:cache`);
+      const savedHistory = await roche.storage.get(`${PLUGIN_ID}:history`);
+      const savedStats = await roche.storage.get(`${PLUGIN_ID}:stats`);
+      const savedCustomEngines = await roche.storage.get(`${PLUGIN_ID}:customEngines`);
 
       if (savedProxy) globalState.proxyUrl = savedProxy;
       if (savedEnabled !== undefined) globalState.enabled = savedEnabled;
@@ -569,9 +572,9 @@
             globalState.enabled = enabledCheckbox.checked;
             globalState.enableCache = cacheCheckbox.checked;
 
-            await roche.storage.set("proxyUrl", url);
-            await roche.storage.set("enabled", globalState.enabled);
-            await roche.storage.set("enableCache", globalState.enableCache);
+            await roche.storage.set(`${PLUGIN_ID}:proxyUrl`, url);
+            await roche.storage.set(`${PLUGIN_ID}:enabled`, globalState.enabled);
+            await roche.storage.set(`${PLUGIN_ID}:enableCache`, globalState.enableCache);
 
             roche.ui.toast("✅ 保存成功！");
           };
@@ -583,7 +586,7 @@
             });
             if (ok) {
               globalState.stats = { total: 0, byTool: {}, cacheHits: 0 };
-              await roche.storage.set("stats", globalState.stats);
+              await roche.storage.set(`${PLUGIN_ID}:stats`, globalState.stats);
               roche.ui.toast("✅ 已清空统计");
               roche.ui.closeApp();
               roche.ui.openApp("auto-web-settings");
@@ -597,7 +600,7 @@
             });
             if (ok) {
               globalState.history = [];
-              await roche.storage.set("history", []);
+              await roche.storage.set(`${PLUGIN_ID}:history`, []);
               roche.ui.toast("✅ 已清空历史");
               roche.ui.closeApp();
               roche.ui.openApp("auto-web-settings");
