@@ -544,9 +544,21 @@
                 <div style="background: white; border-radius: 12px; padding: 20px;">
                   <h3 style="margin: 0 0 12px; font-size: 16px;">🔧 自定义搜索引擎</h3>
                   <div id="custom-engines-list" style="margin-bottom: 12px; font-size: 13px;">
-                    ${globalState.customEngines.map(e => `<div style="padding: 8px; background: #f5f5f5; border-radius: 6px; margin-bottom: 8px;"><strong>${e.name}</strong><br/>${e.searchUrl}</div>`).join("") || "<div style='color: #999;'>暂无自定义引擎</div>"}
+                    ${globalState.customEngines.map(e => `
+                      <div style="padding: 8px; background: #f5f5f5; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                          <strong>${e.name}</strong><br/>
+                          <span style="font-size: 11px; color: #666;">${e.searchUrl}</span>
+                        </div>
+                        <button class="delete-engine-btn" data-id="${e.id}" style="padding: 6px 12px; background: #f44336; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 12px;">删除</button>
+                      </div>
+                    `).join("") || "<div style='color: #999;'>暂无自定义引擎</div>"}
                   </div>
                   <button id="add-engine-btn" style="padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">+ 添加引擎</button>
+                  <div style="margin-top: 12px; padding: 12px; background: #fff3cd; border-radius: 6px; font-size: 12px; color: #856404;">
+                    <strong>💡 提示：</strong>使用 <code>{query}</code> 作为搜索关键词的占位符<br/>
+                    例如：<code>https://www.google.com/search?q={query}</code>
+                  </div>
                 </div>
               </div>
             </div>
@@ -605,9 +617,48 @@
           };
 
           container.querySelector("#add-engine-btn").onclick = async () => {
-            roche.ui.toast("💡 自定义引擎功能开发中...");
-            // TODO: 弹出添加引擎的对话框
+            const name = prompt("引擎名称（如：Google）：");
+            if (!name) return;
+
+            const searchUrl = prompt("搜索URL（用 {query} 表示关键词）：\n例如：https://www.google.com/search?q={query}");
+            if (!searchUrl) return;
+
+            if (!searchUrl.includes("{query}")) {
+              roche.ui.toast("❌ URL 必须包含 {query}");
+              return;
+            }
+
+            globalState.customEngines.push({
+              id: `custom_${Date.now()}`,
+              name: name.trim(),
+              searchUrl: searchUrl.trim()
+            });
+
+            await roche.storage.set("customEngines", globalState.customEngines);
+            roche.ui.toast("✅ 已添加自定义引擎");
+
+            // 重新加载页面
+            roche.ui.closeApp();
+            setTimeout(() => roche.ui.openApp("auto-web-settings"), 100);
           };
+
+          // 删除自定义引擎
+          container.querySelectorAll(".delete-engine-btn").forEach(btn => {
+            btn.onclick = async () => {
+              const id = btn.getAttribute("data-id");
+              const ok = await roche.ui.confirm({
+                title: "删除引擎",
+                message: "确定要删除这个自定义引擎吗？"
+              });
+              if (ok) {
+                globalState.customEngines = globalState.customEngines.filter(e => e.id !== id);
+                await roche.storage.set("customEngines", globalState.customEngines);
+                roche.ui.toast("✅ 已删除");
+                roche.ui.closeApp();
+                setTimeout(() => roche.ui.openApp("auto-web-settings"), 100);
+              }
+            };
+          });
         },
         async unmount(container) {
           container.innerHTML = "";
