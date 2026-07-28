@@ -494,6 +494,22 @@
             return await executeWithCache(ctx.roche || window.Roche, "ao3_search", `${sort}:${query}`, () => toolAO3Search(query, sort));
           },
         },
+        {
+          id: "custom_search",
+          description: "使用自定义搜索引擎搜索。适合用户配置的特定网站搜索。参数：engineId（引擎ID），query（搜索关键词）",
+          parameters: { engineId: "string", query: "string" },
+          async execute(args, ctx) {
+            if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
+            const engineId = String(args?.engineId || "").trim();
+            const query = String(args?.query || "").trim();
+
+            if (!engineId || !query) {
+              return { error: "缺少必需参数" };
+            }
+
+            return await executeWithCache(ctx.roche || window.Roche, "custom_search", `${engineId}:${query}`, () => toolCustomSearch(engineId, query));
+          },
+        },
       ]; // 工具列表结束
       },
     },
@@ -590,9 +606,23 @@
                 <div style="background: white; border-radius: 12px; padding: 20px;">
                   <h3 style="margin: 0 0 12px; font-size: 16px;">🔧 自定义搜索引擎</h3>
                   <div id="custom-engines-list" style="margin-bottom: 12px; font-size: 13px;">
-                    ${globalState.customEngines.map(e => `<div style="padding: 8px; background: #f5f5f5; border-radius: 6px; margin-bottom: 8px;"><strong>${e.name}</strong><br/>${e.searchUrl}</div>`).join("") || "<div style='color: #999;'>暂无自定义引擎</div>"}
+                    ${globalState.customEngines.length > 0 ? globalState.customEngines.map((e, idx) => `
+                      <div style="padding: 10px; background: #f5f5f5; border-radius: 6px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                          <strong>${e.name}</strong><br/>
+                          <span style="font-size: 12px; color: #666;">${e.searchUrl}</span>
+                        </div>
+                        <button class="delete-engine-btn" data-index="${idx}" style="padding: 4px 12px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">删除</button>
+                      </div>
+                    `).join("") : "<div style='color: #999;'>暂无自定义引擎</div>"}
                   </div>
                   <button id="add-engine-btn" style="padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">+ 添加引擎</button>
+                  <div style="margin-top: 12px; font-size: 12px; color: #666; line-height: 1.5;">
+                    💡 示例：<br/>
+                    • 百度: https://www.baidu.com/s?wd={query}<br/>
+                    • Bing: https://www.bing.com/search?q={query}<br/>
+                    • Google: https://www.google.com/search?q={query}
+                  </div>
                 </div>
               </div>
             </div>
@@ -653,9 +683,62 @@
             }
           };
 
+          // 绑定初始的删除引擎按钮
+          container.querySelectorAll(".delete-engine-btn").forEach(btn => {
+            btn.onclick = async () => {
+              const index = parseInt(btn.dataset.index);
+              const engineName = globalState.customEngines[index]?.name || "该引擎";
+
+              const ok = await roche.ui.confirm({
+                title: "删除引擎",
+                message: `确定要删除 "${engineName}" 吗？`
+              });
+
+              if (ok) {
+                globalState.customEngines.splice(index, 1);
+                await roche.storage.set(`${PLUGIN_ID}:customEngines`, globalState.customEngines);
+                roche.ui.toast("✅ 已删除");
+
+                // 刷新页面
+                roche.ui.closeApp();
+                roche.ui.openApp("auto-web-settings");
+              }
+            };
+          });
+
           container.querySelector("#add-engine-btn").onclick = async () => {
-            roche.ui.toast("💡 自定义引擎功能开发中...");
-            // TODO: 弹出添加引擎的对话框
+            // 使用简单的 prompt 让用户输入
+            const name = prompt("请输入搜索引擎名称（如：百度、Bing）：");
+            if (!name || !name.trim()) return;
+
+            const searchUrl = prompt(
+              "请输入搜索 URL 模板（用 {query} 表示搜索词）：\n\n例如：\nhttps://www.baidu.com/s?wd={query}\nhttps://www.bing.com/search?q={query}\nhttps://www.google.com/search?q={query}"
+            );
+            if (!searchUrl || !searchUrl.trim()) return;
+
+            if (!searchUrl.includes("{query}")) {
+              roche.ui.toast("❌ URL 必须包含 {query} 占位符");
+              return;
+            }
+
+            // 生成引擎 ID
+            const engineId = `custom_${Date.now()}`;
+
+            // 添加到列表
+            globalState.customEngines.push({
+              id: engineId,
+              name: name.trim(),
+              searchUrl: searchUrl.trim()
+            });
+
+            // 保存
+            await roche.storage.set(`${PLUGIN_ID}:customEngines`, globalState.customEngines);
+
+            roche.ui.toast("✅ 添加成功！");
+
+            // 刷新页面显示新引擎
+            roche.ui.closeApp();
+            roche.ui.openApp("auto-web-settings");
           };
         },
         async unmount(container) {
