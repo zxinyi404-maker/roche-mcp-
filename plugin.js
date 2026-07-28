@@ -26,6 +26,8 @@
       cacheHits: 0,
     },
     customEngines: [], // 自定义搜索引擎
+    persistTimer: null, // 延迟保存定时器
+    isDirty: false, // 是否有未保存的数据
   };
 
   // ============================================================
@@ -93,9 +95,29 @@
       await roche.storage.set(`${PLUGIN_ID}:proxyUrl`, globalState.proxyUrl);
       await roche.storage.set(`${PLUGIN_ID}:enabled`, globalState.enabled);
       await roche.storage.set(`${PLUGIN_ID}:enableCache`, globalState.enableCache);
+      globalState.isDirty = false;
     } catch (e) {
       console.error("[持久化失败]", e);
     }
+  }
+
+  // 延迟保存（减少 I/O 频率，避免阻塞通知）
+  function schedulePersist(roche) {
+    globalState.isDirty = true;
+
+    // 清除之前的定时器
+    if (globalState.persistTimer) {
+      clearTimeout(globalState.persistTimer);
+    }
+
+    // 3秒后保存（批量合并多次操作）
+    globalState.persistTimer = setTimeout(() => {
+      if (globalState.isDirty) {
+        persistState(roche).catch(err => {
+          console.error("[延迟保存失败]", err);
+        });
+      }
+    }, 3000);
   }
 
   // ============================================================
@@ -108,7 +130,7 @@
     if (cached) {
       addToHistory(tool, query, true);
       updateStats(tool, true);
-      await persistState(roche);
+      schedulePersist(roche); // 改为延迟保存，不阻塞
       return cached;
     }
 
@@ -117,7 +139,7 @@
     saveToCache(tool, query, result);
     addToHistory(tool, query, false);
     updateStats(tool, false);
-    await persistState(roche);
+    schedulePersist(roche); // 改为延迟保存，不阻塞
 
     return result;
   }
