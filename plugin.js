@@ -801,8 +801,63 @@
     id: PLUGIN_ID,
     name: "智能联网助手",
     version: VERSION,
-    description: "搜索互联网内容，支持缓存和自定义引擎",
+    description: "AI 自动联网搜索，支持缓存和自定义引擎",
     author: "zxinyi404-maker",
+
+    // Chat Tools - AI 可以自动调用
+    chat: {
+      tools: [
+        {
+          name: "web_search",
+          description: "在互联网上搜索信息。当用户询问最新信息、实时数据、新闻、天气、产品价格、特定网站内容等需要联网才能回答的问题时使用此工具。",
+          parameters: {
+            type: "object",
+            properties: {
+              query: {
+                type: "string",
+                description: "搜索关键词"
+              },
+              engine: {
+                type: "string",
+                description: "搜索引擎（默认 duckduckgo）",
+                enum: ["duckduckgo"]
+              }
+            },
+            required: ["query"]
+          },
+          handler: async (args, context) => {
+            try {
+              await loadState(context.roche);
+
+              const { query, engine = "duckduckgo" } = args;
+
+              if (engine === "duckduckgo") {
+                const data = await searchDuckDuckGo(query);
+
+                // 添加历史记录
+                addHistory(query, "DuckDuckGo");
+                await saveState(context.roche);
+
+                return {
+                  success: true,
+                  engine: "DuckDuckGo",
+                  fromCache: data.fromCache,
+                  results: data.results.slice(0, 5).map(r => ({
+                    title: r.title,
+                    url: r.url,
+                    snippet: r.snippet
+                  }))
+                };
+              }
+
+              return { success: false, error: "不支持的搜索引擎" };
+            } catch (e) {
+              return { success: false, error: e.message };
+            }
+          }
+        }
+      ]
+    },
 
     apps: [
       {

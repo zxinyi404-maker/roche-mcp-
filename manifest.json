@@ -1,12 +1,13 @@
 {
   "id": "roche-auto-web",
   "name": "智能联网助手",
-  "version": "5.0.0",
-  "description": "搜索互联网内容，支持缓存、历史记录和自定义搜索引擎",
+  "version": "5.1.0",
+  "description": "AI 自动联网搜索，支持缓存、历史记录和自定义搜索引擎",
   "author": "zxinyi404-maker",
   "entry": "https://raw.githubusercontent.com/zxinyi404-maker/roche-mcp-/main/plugin.js",
   "hash": "",
   "permissions": [
+    "ai:chat",
     "storage",
     "ui"
   ]
