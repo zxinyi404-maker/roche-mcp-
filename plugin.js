@@ -1,8 +1,9 @@
 /*
- * Roche 智能联网助手 v5.2.0
- * 支持：DuckDuckGo、网页浏览
+ * Roche 智能联网助手 v5.4.0
+ * 支持：DuckDuckGo、网页浏览、手动搜索助手
  * 功能：缓存（24h）、历史记录、统计、自定义搜索引擎、自定义Headers
- * 优化：极简聊天工具（仅2个），立即保存数据，不阻塞消息流
+ * 新增：搜索助手 App - 手动搜索不影响消息流
+ * 优化：极简聊天工具（仅2个），立即保存数据
  *
  * 使用 Roche 标准 chat.tools API
  */
@@ -409,7 +410,7 @@
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "智能联网助手",
-    version: "5.2.0",
+    version: "5.4.0",
 
     chat: {
       scope: {},
@@ -476,7 +477,7 @@
                 <button id="back-btn" style="padding: 8px 16px; background: #f0f0f0; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
                   ← 返回
                 </button>
-                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 v5.2.0</h2>
+                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 v5.4.0</h2>
               </div>
 
               <div style="flex: 1; overflow-y: auto; padding: 20px;">
@@ -723,6 +724,145 @@
             // 刷新页面显示新引擎
             roche.ui.closeApp();
             roche.ui.openApp("auto-web-settings");
+          };
+        },
+        async unmount(container) {
+          container.innerHTML = "";
+        },
+      },
+      {
+        id: "auto-web-search",
+        name: "搜索助手",
+        icon: "search",
+        async mount(container, roche) {
+          await initGlobalState(roche);
+
+          container.innerHTML = `
+            <div style="display: flex; flex-direction: column; height: 100%; font-family: system-ui; background: #f5f5f5;">
+              <div style="display: flex; align-items: center; padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <span style="font-size: 24px; margin-right: 12px;">🔍</span>
+                <h2 style="margin: 0; font-size: 18px; font-weight: 600;">搜索助手</h2>
+              </div>
+
+              <div style="flex: 1; overflow-y: auto; padding: 20px;">
+                <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                  <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">搜索关键词</label>
+                  <input type="text" id="search-query" placeholder="输入要搜索的内容..." style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 14px; box-sizing: border-box; transition: border-color 0.3s;" />
+
+                  <button id="search-btn" style="width: 100%; margin-top: 16px; padding: 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: transform 0.2s;">
+                    🔍 开始搜索
+                  </button>
+                </div>
+
+                <div id="search-results" style="display: none;">
+                  <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                      <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #333;">搜索结果</h3>
+                      <button id="copy-btn" style="padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.3s;">
+                        📋 复制结果
+                      </button>
+                    </div>
+                    <div id="results-content" style="max-height: 500px; overflow-y: auto;"></div>
+                  </div>
+                </div>
+
+                <div id="search-loading" style="display: none; text-align: center; padding: 40px;">
+                  <div style="font-size: 48px; animation: spin 1s linear infinite;">⏳</div>
+                  <p style="margin-top: 16px; color: #666;">正在搜索中...</p>
+                </div>
+              </div>
+            </div>
+            <style>
+              @keyframes spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+              #search-query:focus {
+                outline: none;
+                border-color: #667eea;
+              }
+              #search-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+              }
+              #copy-btn:hover {
+                background: #45a049;
+              }
+            </style>
+          `;
+
+          const searchBtn = container.querySelector("#search-btn");
+          const searchQuery = container.querySelector("#search-query");
+          const resultsDiv = container.querySelector("#search-results");
+          const loadingDiv = container.querySelector("#search-loading");
+          const resultsContent = container.querySelector("#results-content");
+          const copyBtn = container.querySelector("#copy-btn");
+
+          let currentResults = "";
+
+          // 搜索功能
+          searchBtn.onclick = async () => {
+            const query = searchQuery.value.trim();
+            if (!query) {
+              roche.ui.toast("⚠️ 请输入搜索关键词");
+              return;
+            }
+
+            // 显示加载
+            resultsDiv.style.display = "none";
+            loadingDiv.style.display = "block";
+
+            try {
+              // 调用搜索工具
+              const result = await toolWebSearch(query);
+
+              if (result.error) {
+                throw new Error(result.error);
+              }
+
+              // 格式化结果
+              let formattedResults = `搜索关键词：${query}\n\n`;
+              result.results.forEach((r, i) => {
+                formattedResults += `${i + 1}. ${r.title}\n`;
+                formattedResults += `   ${r.url}\n`;
+                formattedResults += `   ${r.snippet}\n\n`;
+              });
+
+              currentResults = formattedResults;
+
+              // 显示结果
+              resultsContent.innerHTML = result.results.map((r, i) => `
+                <div style="padding: 16px; border-bottom: 1px solid #eee; ${i === result.results.length - 1 ? 'border-bottom: none;' : ''}">
+                  <div style="font-weight: 600; color: #1a73e8; margin-bottom: 4px;">${i + 1}. ${r.title}</div>
+                  <div style="font-size: 12px; color: #5f6368; margin-bottom: 8px; word-break: break-all;">${r.url}</div>
+                  <div style="font-size: 13px; color: #666; line-height: 1.5;">${r.snippet}</div>
+                </div>
+              `).join('');
+
+              loadingDiv.style.display = "none";
+              resultsDiv.style.display = "block";
+
+              roche.ui.toast("✅ 搜索完成！");
+            } catch (e) {
+              loadingDiv.style.display = "none";
+              roche.ui.toast(`❌ 搜索失败: ${e.message}`);
+            }
+          };
+
+          // 复制功能
+          copyBtn.onclick = () => {
+            navigator.clipboard.writeText(currentResults).then(() => {
+              roche.ui.toast("✅ 已复制到剪贴板！");
+            }).catch(() => {
+              roche.ui.toast("❌ 复制失败");
+            });
+          };
+
+          // 回车搜索
+          searchQuery.onkeypress = (e) => {
+            if (e.key === 'Enter') {
+              searchBtn.click();
+            }
           };
         },
         async unmount(container) {
