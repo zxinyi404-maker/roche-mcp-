@@ -1,8 +1,8 @@
 /*
- * Roche 智能联网助手 v5.1.0
- * 支持：DuckDuckGo、网页浏览、知乎、Reddit、YouTube、AO3
+ * Roche 智能联网助手 v5.2.0
+ * 支持：DuckDuckGo、网页浏览
  * 功能：缓存（24h）、历史记录、统计、自定义搜索引擎、自定义Headers
- * 优化：立即保存数据，不阻塞消息流，默认关闭聊天工具
+ * 优化：极简聊天工具（仅2个），立即保存数据，不阻塞消息流
  *
  * 使用 Roche 标准 chat.tools API
  */
@@ -405,7 +405,7 @@
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "智能联网助手",
-    version: "5.1.0",
+    version: "5.2.0",
 
     chat: {
       scope: {},
@@ -472,7 +472,7 @@
                 <button id="back-btn" style="padding: 8px 16px; background: #f0f0f0; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
                   ← 返回
                 </button>
-                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 v5.1.0</h2>
+                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 v5.2.0</h2>
               </div>
 
               <div style="flex: 1; overflow-y: auto; padding: 20px;">
