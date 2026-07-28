@@ -1,9 +1,9 @@
 /*
- * Roche 智能联网助手 v5.4.0
- * 支持：DuckDuckGo、网页浏览、手动搜索助手
+ * Roche 智能联网助手 v5.5.0
+ * 支持：DuckDuckGo、手动搜索助手
  * 功能：缓存（24h）、历史记录、统计、自定义搜索引擎、自定义Headers
+ * 极简模式：仅1个聊天工具（web_search），最大程度减少阻塞
  * 新增：搜索助手 App - 手动搜索不影响消息流
- * 优化：极简聊天工具（仅2个），立即保存数据
  *
  * 使用 Roche 标准 chat.tools API
  */
@@ -410,7 +410,7 @@
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "智能联网助手",
-    version: "5.4.0",
+    version: "5.5.0",
 
     chat: {
       scope: {},
@@ -421,7 +421,7 @@
           return [];
         }
 
-        // 极简工具列表：只保留最常用的2个，减少干扰
+        // 极简工具列表：只保留1个工具，最大程度减少阻塞
         return [
         {
           id: "web_search",
@@ -432,24 +432,6 @@
             try {
               const query = String(args?.query || "").trim();
               return await executeWithCache(ctx.roche || window.Roche, "web_search", query, () => toolWebSearch(query));
-            } catch (e) {
-              return { error: e.message };
-            }
-          },
-        },
-        {
-          id: "open_page",
-          description: "打开网页并读取正文。当需要阅读具体网页内容时使用。参数：url（网页地址）",
-          parameters: { url: "string" },
-          async execute(args, ctx) {
-            if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            try {
-              const url = String(args?.url || "").trim();
-              const result = await toolOpenPage(url);
-              addToHistory("open_page", url, false);
-              updateStats("open_page", false);
-              persistState(ctx.roche || window.Roche).catch(err => console.error("[保存失败]", err));
-              return result;
             } catch (e) {
               return { error: e.message };
             }
@@ -477,7 +459,7 @@
                 <button id="back-btn" style="padding: 8px 16px; background: #f0f0f0; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">
                   ← 返回
                 </button>
-                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 v5.4.0</h2>
+                <h2 style="margin: 0 0 0 16px; font-size: 18px; font-weight: 600;">智能联网助手 v5.5.0</h2>
               </div>
 
               <div style="flex: 1; overflow-y: auto; padding: 20px;">
