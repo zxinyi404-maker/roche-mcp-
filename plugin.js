@@ -18,6 +18,7 @@
     enabled: true,
     enableCache: true,
     enableChatTools: false, // 默认禁用聊天工具，避免干扰消息
+    customHeaders: {}, // 自定义请求头（支持 Cookie 等）
     initialized: false,
     cache: {}, // 缓存：key -> {data, timestamp}
     history: [], // 历史：[{tool, query, timestamp, cached}]
@@ -93,6 +94,7 @@
       await roche.storage.set(`${PLUGIN_ID}:history`, globalState.history);
       await roche.storage.set(`${PLUGIN_ID}:stats`, globalState.stats);
       await roche.storage.set(`${PLUGIN_ID}:customEngines`, globalState.customEngines);
+      await roche.storage.set(`${PLUGIN_ID}:customHeaders`, globalState.customHeaders);
       await roche.storage.set(`${PLUGIN_ID}:proxyUrl`, globalState.proxyUrl);
       await roche.storage.set(`${PLUGIN_ID}:enabled`, globalState.enabled);
       await roche.storage.set(`${PLUGIN_ID}:enableCache`, globalState.enableCache);
@@ -153,10 +155,16 @@
       throw new Error("未配置 CORS 代理地址");
     }
 
+    // 合并自定义 headers（如 Cookie）
+    const mergedHeaders = {
+      ...(opts.headers || {}),
+      ...globalState.customHeaders
+    };
+
     const payload = {
       url: url,
       method: opts.method || "GET",
-      headers: opts.headers || {},
+      headers: mergedHeaders,
     };
     if (opts.body != null) payload.body = opts.body;
 
@@ -381,6 +389,7 @@
       const savedEnabled = await roche.storage.get(`${PLUGIN_ID}:enabled`);
       const savedEnableCache = await roche.storage.get(`${PLUGIN_ID}:enableCache`);
       const savedEnableChatTools = await roche.storage.get(`${PLUGIN_ID}:enableChatTools`);
+      const savedCustomHeaders = await roche.storage.get(`${PLUGIN_ID}:customHeaders`);
       const savedCache = await roche.storage.get(`${PLUGIN_ID}:cache`);
       const savedHistory = await roche.storage.get(`${PLUGIN_ID}:history`);
       const savedStats = await roche.storage.get(`${PLUGIN_ID}:stats`);
@@ -390,6 +399,7 @@
       if (savedEnabled !== undefined) globalState.enabled = savedEnabled;
       if (savedEnableCache !== undefined) globalState.enableCache = savedEnableCache;
       if (savedEnableChatTools !== undefined) globalState.enableChatTools = savedEnableChatTools;
+      if (savedCustomHeaders) globalState.customHeaders = savedCustomHeaders;
       if (savedCache) globalState.cache = savedCache;
       if (savedHistory) globalState.history = savedHistory;
       if (savedStats) globalState.stats = savedStats;
@@ -542,6 +552,19 @@
                   <input id="proxy-input" type="text" placeholder="https://用户名-项目名.hf.space/proxy" value="${globalState.proxyUrl}" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; box-sizing: border-box;" />
                 </div>
 
+                <!-- 自定义请求头（Cookie 等）-->
+                <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+                  <h3 style="margin: 0 0 8px; font-size: 16px; font-weight: 600;">🍪 自定义请求头（高级）</h3>
+                  <p style="margin: 0 0 12px; font-size: 13px; color: #666; line-height: 1.5;">
+                    为搜索请求添加自定义 HTTP 头，如 Cookie、Authorization 等。<br/>
+                    格式：每行一个，如 <code style="background: #f5f5f5; padding: 2px 4px;">Cookie: session=abc123</code>
+                  </p>
+                  <textarea id="custom-headers-input" placeholder="Cookie: session=abc123&#10;User-Agent: MyApp/1.0" style="width: 100%; min-height: 100px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; font-family: monospace; box-sizing: border-box; resize: vertical;">${Object.entries(globalState.customHeaders).map(([k, v]) => `${k}: ${v}`).join('\n')}</textarea>
+                  <div style="margin-top: 8px; font-size: 12px; color: #ff9800;">
+                    ⚠️ 注意：Cookie 可能包含敏感信息，请勿在不信任的代理服务器上使用。
+                  </div>
+                </div>
+
                 <div style="background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
                   <label style="display: flex; align-items: center; cursor: pointer; margin-bottom: 12px;">
                     <input id="enabled-checkbox" type="checkbox" ${globalState.enabled ? "checked" : ""} style="width: 20px; height: 20px; margin-right: 10px; cursor: pointer;" />
@@ -635,6 +658,7 @@
             const enabledCheckbox = container.querySelector("#enabled-checkbox");
             const cacheCheckbox = container.querySelector("#cache-checkbox");
             const chatToolsCheckbox = container.querySelector("#chat-tools-checkbox");
+            const customHeadersInput = container.querySelector("#custom-headers-input");
             const url = input.value.trim();
 
             if (!url) {
@@ -642,15 +666,41 @@
               return;
             }
 
+            // 解析自定义 headers
+            const customHeaders = {};
+            const headerLines = customHeadersInput.value.split('\n');
+            for (const line of headerLines) {
+              const trimmed = line.trim();
+              if (!trimmed) continue;
+
+              const colonIndex = trimmed.indexOf(':');
+              if (colonIndex === -1) {
+                roche.ui.toast(`❌ 格式错误：${trimmed}\n正确格式：Header-Name: value`);
+                return;
+              }
+
+              const key = trimmed.substring(0, colonIndex).trim();
+              const value = trimmed.substring(colonIndex + 1).trim();
+
+              if (!key) {
+                roche.ui.toast(`❌ Header 名称不能为空`);
+                return;
+              }
+
+              customHeaders[key] = value;
+            }
+
             globalState.proxyUrl = url;
             globalState.enabled = enabledCheckbox.checked;
             globalState.enableCache = cacheCheckbox.checked;
             globalState.enableChatTools = chatToolsCheckbox.checked;
+            globalState.customHeaders = customHeaders;
 
             await roche.storage.set(`${PLUGIN_ID}:proxyUrl`, url);
             await roche.storage.set(`${PLUGIN_ID}:enabled`, globalState.enabled);
             await roche.storage.set(`${PLUGIN_ID}:enableCache`, globalState.enableCache);
             await roche.storage.set(`${PLUGIN_ID}:enableChatTools`, globalState.enableChatTools);
+            await roche.storage.set(`${PLUGIN_ID}:customHeaders`, globalState.customHeaders);
 
             roche.ui.toast("✅ 保存成功！" + (chatToolsCheckbox.checked ? "" : " 请刷新页面使聊天工具设置生效。"));
           };
