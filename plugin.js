@@ -1,17 +1,15 @@
 /*
- * Roche 智能联网助手 v5.0
- * 重新设计版本 - 清爽界面 + 完整功能
- * 功能：搜索、缓存、历史记录、自定义引擎
+ * Roche 智能联网助手 v6.0
+ * 功能：DuckDuckGo搜索 + AI自动调用 + 缓存 + 历史 + 高度自定义引擎
  */
 
 (function () {
   "use strict";
 
   const PLUGIN_ID = "roche-auto-web";
-  const VERSION = "5.0.0";
-  const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24小时
+  const VERSION = "6.0.0";
+  const CACHE_DURATION = 24 * 60 * 60 * 1000;
 
-  // 全局状态
   let state = {
     proxyUrl: "https://jbcjkfcfnsak-xinchajian.hf.space",
     searchHistory: [],
@@ -26,11 +24,9 @@
   async function loadState(roche) {
     try {
       const stored = await roche.storage.get(`${PLUGIN_ID}:state`);
-      if (stored) {
-        state = { ...state, ...stored };
-      }
+      if (stored) state = { ...state, ...stored };
     } catch (e) {
-      console.error("[加载状态失败]", e);
+      console.error("[加载失败]", e);
     }
   }
 
@@ -38,11 +34,10 @@
     try {
       await roche.storage.set(`${PLUGIN_ID}:state`, state);
     } catch (e) {
-      console.error("[保存状态失败]", e);
+      console.error("[保存失败]", e);
     }
   }
 
-  // 获取缓存
   function getCache(key) {
     const cached = state.searchCache[key];
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -51,14 +46,8 @@
     return null;
   }
 
-  // 设置缓存
   function setCache(key, data) {
-    state.searchCache[key] = {
-      data,
-      timestamp: Date.now(),
-    };
-
-    // 清理过期缓存
+    state.searchCache[key] = { data, timestamp: Date.now() };
     Object.keys(state.searchCache).forEach((k) => {
       if (Date.now() - state.searchCache[k].timestamp > CACHE_DURATION) {
         delete state.searchCache[k];
@@ -66,13 +55,8 @@
     });
   }
 
-  // 添加历史记录
   function addHistory(query, engine) {
-    state.searchHistory.unshift({
-      query,
-      engine,
-      timestamp: Date.now(),
-    });
+    state.searchHistory.unshift({ query, engine, timestamp: Date.now() });
     if (state.searchHistory.length > 50) {
       state.searchHistory = state.searchHistory.slice(0, 50);
     }
@@ -85,19 +69,13 @@
   async function searchDuckDuckGo(query) {
     const cacheKey = `ddg_${query}`;
     const cached = getCache(cacheKey);
-    if (cached) {
-      return { results: cached, fromCache: true };
-    }
+    if (cached) return { results: cached, fromCache: true };
 
     const url = `${state.proxyUrl}/api/search/duckduckgo?q=${encodeURIComponent(query)}`;
     const response = await fetch(url);
-
-    if (!response.ok) {
-      throw new Error(`搜索失败: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`搜索失败: ${response.status}`);
 
     const data = await response.json();
-
     if (!data.results || data.results.length === 0) {
       throw new Error("未找到结果");
     }
@@ -109,32 +87,39 @@
   async function searchCustomEngine(engine, query) {
     const cacheKey = `custom_${engine.id}_${query}`;
     const cached = getCache(cacheKey);
-    if (cached) {
-      return { ...cached, fromCache: true };
-    }
+    if (cached) return { ...cached, fromCache: true };
 
-    const searchUrl = engine.url.replace("{query}", encodeURIComponent(query));
+    let searchUrl = engine.url;
+    
+    // 替换占位符
+    searchUrl = searchUrl.replace(/\{query\}/g, encodeURIComponent(query));
+    searchUrl = searchUrl.replace(/\{query_raw\}/g, query);
+
     const proxyUrl = `${state.proxyUrl}/api/proxy`;
+    const headers = { "User-Agent": "Mozilla/5.0" };
+    
+    // 自定义headers
+    if (engine.headers) {
+      Object.assign(headers, engine.headers);
+    }
 
     const response = await fetch(proxyUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         url: searchUrl,
-        method: "GET",
-        headers: { "User-Agent": "Mozilla/5.0" },
+        method: engine.method || "GET",
+        headers: headers,
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`请求失败: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`请求失败: ${response.status}`);
 
     const text = await response.text();
     const result = {
       engineName: engine.name,
       url: searchUrl,
-      content: text.substring(0, 5000),
+      content: text.substring(0, 10000),
     };
 
     setCache(cacheKey, result);
@@ -142,63 +127,240 @@
   }
 
   // ============================================================
-  // UI 组件
+  // UI 样式
   // ============================================================
 
-  function createSearchUI(container, roche) {
-    container.innerHTML = `
-      <div class="search-container">
-        <div class="header">
-          <h1>🔍 智能搜索</h1>
-          <p>快速搜索互联网内容</p>
-        </div>
+  const CSS_STYLES = `
+    <style>
+      .auto-web-app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f5f7fa;
+      }
+      .auto-web-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .auto-web-back-btn {
+        font-size: 24px;
+        cursor: pointer;
+        transition: transform 0.2s;
+      }
+      .auto-web-back-btn:hover {
+        transform: translateX(-4px);
+      }
+      .auto-web-title {
+        font-size: 22px;
+        font-weight: 600;
+      }
+      .auto-web-subtitle {
+        font-size: 14px;
+        opacity: 0.9;
+        margin-top: 4px;
+      }
+      .auto-web-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+      }
+      .auto-web-card {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      }
+      .auto-web-card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 16px;
+      }
+      .auto-web-btn {
+        width: 100%;
+        padding: 14px;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+      }
+      .auto-web-btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+      .auto-web-btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      }
+      .auto-web-btn-secondary {
+        background: #4CAF50;
+        color: white;
+      }
+      .auto-web-btn-secondary:hover {
+        background: #45a049;
+      }
+      .auto-web-btn-danger {
+        background: #f44336;
+        color: white;
+        padding: 10px 16px;
+        width: auto;
+      }
+      .auto-web-btn-danger:hover {
+        background: #d32f2f;
+      }
+      .auto-web-input {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #e0e7ff;
+        border-radius: 8px;
+        font-size: 14px;
+        margin-bottom: 12px;
+        box-sizing: border-box;
+        transition: border-color 0.3s;
+      }
+      .auto-web-input:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+      .auto-web-select {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #e0e7ff;
+        border-radius: 8px;
+        font-size: 14px;
+        margin-bottom: 12px;
+        cursor: pointer;
+      }
+      .auto-web-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 40px;
+      }
+      .auto-web-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .auto-web-result-item {
+        padding: 16px;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      .auto-web-result-item:last-child {
+        border-bottom: none;
+      }
+      .auto-web-result-title {
+        font-weight: 600;
+        color: #1a73e8;
+        margin-bottom: 6px;
+      }
+      .auto-web-result-url {
+        font-size: 12px;
+        color: #5f6368;
+        margin-bottom: 8px;
+        word-break: break-all;
+      }
+      .auto-web-result-snippet {
+        font-size: 14px;
+        color: #666;
+        line-height: 1.5;
+      }
+      .auto-web-history-item {
+        padding: 12px;
+        border-bottom: 1px solid #f0f0f0;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .auto-web-history-item:hover {
+        background: #f8f9fa;
+      }
+      .auto-web-engine-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 12px;
+        background: #f9f9f9;
+        border-radius: 8px;
+        margin-bottom: 12px;
+      }
+      .auto-web-empty {
+        text-align: center;
+        color: #999;
+        padding: 40px;
+      }
+    </style>
+  `;
 
-        <div class="content">
-          <!-- 搜索框 -->
-          <div class="search-box">
-            <select id="engine-select" class="engine-select">
+  // ============================================================
+  // 搜索页面
+  // ============================================================
+
+  function createSearchPage(container, roche) {
+    container.innerHTML = CSS_STYLES + `
+      <div class="auto-web-app">
+        <div class="auto-web-header">
+          <div class="auto-web-back-btn" id="back-btn">←</div>
+          <div>
+            <div class="auto-web-title">🔍 搜索助手</div>
+            <div class="auto-web-subtitle">快速搜索互联网内容</div>
+          </div>
+        </div>
+        <div class="auto-web-content">
+          <div class="auto-web-card">
+            <select id="engine-select" class="auto-web-select">
               <option value="duckduckgo">🦆 DuckDuckGo</option>
             </select>
-            <input type="text" id="search-input" placeholder="输入搜索关键词..." class="search-input" />
-            <button id="search-btn" class="btn-primary">搜索</button>
+            <input type="text" id="search-input" placeholder="输入搜索关键词..." class="auto-web-input" />
+            <button id="search-btn" class="auto-web-btn auto-web-btn-primary">搜索</button>
           </div>
 
-          <!-- 加载状态 -->
-          <div id="loading" class="loading" style="display: none;">
-            <div class="spinner"></div>
-            <p>搜索中...</p>
-          </div>
-
-          <!-- 搜索结果 -->
-          <div id="results-section" class="results-section" style="display: none;">
-            <div class="results-header">
-              <h3>搜索结果</h3>
-              <button id="copy-btn" class="btn-secondary">📋 复制</button>
+          <div id="loading" style="display: none;">
+            <div class="auto-web-loading">
+              <div class="auto-web-spinner"></div>
+              <p style="margin-top: 16px; color: #666;">搜索中...</p>
             </div>
-            <div id="results-content" class="results-content"></div>
           </div>
 
-          <!-- 搜索历史 -->
-          <div class="history-section">
-            <div class="section-header">
-              <h3>📜 搜索历史</h3>
-              <button id="clear-history-btn" class="btn-danger">清空</button>
+          <div id="results" style="display: none;" class="auto-web-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <div class="auto-web-card-title">搜索结果</div>
+              <button id="copy-btn" class="auto-web-btn auto-web-btn-secondary" style="width: auto; padding: 10px 20px;">📋 复制</button>
             </div>
-            <div id="history-list" class="history-list"></div>
+            <div id="results-content"></div>
+          </div>
+
+          <div class="auto-web-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <div class="auto-web-card-title">📜 搜索历史</div>
+              <button id="clear-history-btn" class="auto-web-btn auto-web-btn-danger">清空</button>
+            </div>
+            <div id="history-list"></div>
           </div>
         </div>
       </div>
     `;
 
-    attachSearchHandlers(container, roche);
-  }
-
-  function attachSearchHandlers(container, roche) {
+    const backBtn = container.querySelector("#back-btn");
     const engineSelect = container.querySelector("#engine-select");
     const searchInput = container.querySelector("#search-input");
     const searchBtn = container.querySelector("#search-btn");
     const loading = container.querySelector("#loading");
-    const resultsSection = container.querySelector("#results-section");
+    const results = container.querySelector("#results");
     const resultsContent = container.querySelector("#results-content");
     const copyBtn = container.querySelector("#copy-btn");
     const historyList = container.querySelector("#history-list");
@@ -214,25 +376,20 @@
       engineSelect.appendChild(option);
     });
 
-    // 渲染历史记录
+    // 渲染历史
     function renderHistory() {
       if (state.searchHistory.length === 0) {
-        historyList.innerHTML = '<p class="empty-text">暂无搜索记录</p>';
+        historyList.innerHTML = '<div class="auto-web-empty">暂无搜索记录</div>';
         return;
       }
-
-      historyList.innerHTML = state.searchHistory
-        .map(
-          (item) => `
-        <div class="history-item" data-query="${item.query}">
-          <div class="history-query">${item.query}</div>
-          <div class="history-meta">${item.engine} · ${new Date(item.timestamp).toLocaleString()}</div>
+      historyList.innerHTML = state.searchHistory.map(item => `
+        <div class="auto-web-history-item" data-query="${item.query}">
+          <div style="font-weight: 500; color: #333; margin-bottom: 4px;">${item.query}</div>
+          <div style="font-size: 12px; color: #999;">${item.engine} · ${new Date(item.timestamp).toLocaleString()}</div>
         </div>
-      `
-        )
-        .join("");
+      `).join('');
 
-      historyList.querySelectorAll(".history-item").forEach((item) => {
+      historyList.querySelectorAll('.auto-web-history-item').forEach(item => {
         item.onclick = () => {
           searchInput.value = item.dataset.query;
         };
@@ -248,17 +405,14 @@
       }
 
       const engineType = engineSelect.value;
-
-      loading.style.display = "flex";
-      resultsSection.style.display = "none";
+      loading.style.display = "block";
+      results.style.display = "none";
 
       try {
-        let results;
         let engineName;
 
         if (engineType === "duckduckgo") {
           const data = await searchDuckDuckGo(query);
-          results = data.results;
           engineName = "DuckDuckGo";
 
           if (data.fromCache) {
@@ -266,23 +420,19 @@
           }
 
           currentResults = `🔍 搜索：${query}\n📊 来源：${engineName}${data.fromCache ? " (缓存)" : ""}\n\n`;
-          results.forEach((r, i) => {
+          data.results.forEach((r, i) => {
             currentResults += `${i + 1}. ${r.title}\n🔗 ${r.url}\n📝 ${r.snippet}\n\n`;
           });
 
-          resultsContent.innerHTML = results
-            .map(
-              (r, i) => `
-            <div class="result-item">
-              <div class="result-title">${i + 1}. ${r.title}</div>
-              <div class="result-url">${r.url}</div>
-              <div class="result-snippet">${r.snippet}</div>
+          resultsContent.innerHTML = data.results.map((r, i) => `
+            <div class="auto-web-result-item">
+              <div class="auto-web-result-title">${i + 1}. ${r.title}</div>
+              <div class="auto-web-result-url">${r.url}</div>
+              <div class="auto-web-result-snippet">${r.snippet}</div>
             </div>
-          `
-            )
-            .join("");
+          `).join('');
         } else {
-          const engine = state.customEngines.find((e) => e.id === engineType);
+          const engine = state.customEngines.find(e => e.id === engineType);
           const data = await searchCustomEngine(engine, query);
           engineName = engine.name;
 
@@ -293,10 +443,10 @@
           currentResults = `🔍 搜索：${query}\n🔧 引擎：${engineName}\n🔗 ${data.url}\n\n${data.content}`;
 
           resultsContent.innerHTML = `
-            <div class="result-item">
-              <div class="result-title">🔧 ${engineName}</div>
-              <div class="result-url">${data.url}</div>
-              <div class="result-snippet" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${data.content}</div>
+            <div class="auto-web-result-item">
+              <div class="auto-web-result-title">🔧 ${engineName}</div>
+              <div class="auto-web-result-url">${data.url}</div>
+              <div class="auto-web-result-snippet" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">${data.content}</div>
             </div>
           `;
         }
@@ -306,7 +456,7 @@
         renderHistory();
 
         loading.style.display = "none";
-        resultsSection.style.display = "block";
+        results.style.display = "block";
         roche.ui.toast("✅ 搜索完成");
       } catch (e) {
         loading.style.display = "none";
@@ -315,18 +465,16 @@
       }
     }
 
+    backBtn.onclick = () => roche.ui.closeApp();
     searchBtn.onclick = performSearch;
     searchInput.onkeypress = (e) => {
-      if (e.key === "Enter") performSearch();
+      if (e.key === 'Enter') performSearch();
     };
-
     copyBtn.onclick = () => {
-      navigator.clipboard
-        .writeText(currentResults)
+      navigator.clipboard.writeText(currentResults)
         .then(() => roche.ui.toast("✅ 已复制"))
         .catch(() => roche.ui.toast("❌ 复制失败"));
     };
-
     clearHistoryBtn.onclick = async () => {
       state.searchHistory = [];
       await saveState(roche);
@@ -337,78 +485,92 @@
     renderHistory();
   }
 
-  function createSettingsUI(container, roche) {
-    container.innerHTML = `
-      <div class="settings-container">
-        <div class="header">
-          <h1>⚙️ 设置</h1>
-          <p>配置代理和自定义引擎</p>
-        </div>
+  // ============================================================
+  // 设置页面
+  // ============================================================
 
-        <div class="content">
+  function createSettingsPage(container, roche) {
+    container.innerHTML = CSS_STYLES + `
+      <div class="auto-web-app">
+        <div class="auto-web-header">
+          <div class="auto-web-back-btn" id="back-btn">←</div>
+          <div>
+            <div class="auto-web-title">⚙️ 设置</div>
+            <div class="auto-web-subtitle">配置代理和自定义引擎</div>
+          </div>
+        </div>
+        <div class="auto-web-content">
           <!-- 代理设置 -->
-          <div class="setting-section">
-            <h3>🌐 代理服务器</h3>
-            <input type="text" id="proxy-input" value="${state.proxyUrl}" placeholder="https://your-proxy.hf.space" class="input-field" />
-            <button id="save-proxy-btn" class="btn-primary">💾 保存</button>
+          <div class="auto-web-card">
+            <div class="auto-web-card-title">🌐 代理服务器</div>
+            <input type="text" id="proxy-input" value="${state.proxyUrl}" placeholder="https://your-proxy.hf.space" class="auto-web-input" />
+            <button id="save-proxy-btn" class="auto-web-btn auto-web-btn-primary">💾 保存</button>
           </div>
 
           <!-- 自定义引擎 -->
-          <div class="setting-section">
-            <h3>🔧 自定义搜索引擎</h3>
-            <div id="engines-list" class="engines-list"></div>
-            <div class="add-engine-form">
-              <input type="text" id="engine-name" placeholder="引擎名称（如：Google）" class="input-field" />
-              <input type="text" id="engine-url" placeholder="搜索URL（用{query}表示关键词）" class="input-field" />
-              <button id="add-engine-btn" class="btn-primary">➕ 添加引擎</button>
+          <div class="auto-web-card">
+            <div class="auto-web-card-title">🔧 自定义搜索引擎</div>
+            <div id="engines-list"></div>
+            <div style="padding: 16px; background: #f5f5f5; border-radius: 8px; margin-top: 16px;">
+              <input type="text" id="engine-name" placeholder="引擎名称（如：Google）" class="auto-web-input" />
+              <input type="text" id="engine-url" placeholder="搜索URL（用{query}代替关键词）" class="auto-web-input" />
+              <select id="engine-method" class="auto-web-select">
+                <option value="GET">GET 请求</option>
+                <option value="POST">POST 请求</option>
+              </select>
+              <textarea id="engine-headers" placeholder='自定义Headers（JSON格式，可选）\n例如：{"Cookie": "xxx", "Authorization": "Bearer xxx"}' class="auto-web-input" rows="3" style="resize: vertical; font-family: monospace;"></textarea>
+              <button id="add-engine-btn" class="auto-web-btn auto-web-btn-primary">➕ 添加引擎</button>
+            </div>
+            <div style="margin-top: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; font-size: 13px; color: #856404;">
+              <strong>💡 提示：</strong><br>
+              • 使用 <code>{query}</code> 作为关键词占位符（会自动 URL 编码）<br>
+              • 使用 <code>{query_raw}</code> 如果不需要编码<br>
+              • 自定义 Headers 可以添加 Cookie、Authorization 等<br>
+              • 例如：<code>https://www.google.com/search?q={query}</code>
             </div>
           </div>
 
           <!-- 缓存管理 -->
-          <div class="setting-section">
-            <h3>🗑️ 缓存管理</h3>
-            <p class="info-text">当前缓存：${Object.keys(state.searchCache).length} 条</p>
-            <button id="clear-cache-btn" class="btn-danger">🗑️ 清空缓存</button>
+          <div class="auto-web-card">
+            <div class="auto-web-card-title">🗑️ 缓存管理</div>
+            <p style="margin: 0 0 12px; font-size: 14px; color: #666;">当前缓存：${Object.keys(state.searchCache).length} 条</p>
+            <button id="clear-cache-btn" class="auto-web-btn auto-web-btn-danger">🗑️ 清空缓存</button>
           </div>
         </div>
       </div>
     `;
 
-    attachSettingsHandlers(container, roche);
-  }
-
-  function attachSettingsHandlers(container, roche) {
+    const backBtn = container.querySelector("#back-btn");
     const proxyInput = container.querySelector("#proxy-input");
     const saveProxyBtn = container.querySelector("#save-proxy-btn");
     const enginesList = container.querySelector("#engines-list");
     const engineNameInput = container.querySelector("#engine-name");
     const engineUrlInput = container.querySelector("#engine-url");
+    const engineMethodSelect = container.querySelector("#engine-method");
+    const engineHeadersInput = container.querySelector("#engine-headers");
     const addEngineBtn = container.querySelector("#add-engine-btn");
     const clearCacheBtn = container.querySelector("#clear-cache-btn");
 
     function renderEngines() {
       if (state.customEngines.length === 0) {
-        enginesList.innerHTML = '<p class="empty-text">暂无自定义引擎</p>';
+        enginesList.innerHTML = '<div class="auto-web-empty">暂无自定义引擎</div>';
         return;
       }
 
-      enginesList.innerHTML = state.customEngines
-        .map(
-          (engine) => `
-        <div class="engine-item">
-          <div>
-            <div class="engine-name">${engine.name}</div>
-            <div class="engine-url">${engine.url}</div>
+      enginesList.innerHTML = state.customEngines.map(engine => `
+        <div class="auto-web-engine-item">
+          <div style="flex: 1;">
+            <div style="font-weight: 600; color: #333; margin-bottom: 4px;">${engine.name}</div>
+            <div style="font-size: 12px; color: #666; word-break: break-all; margin-bottom: 4px;">${engine.url}</div>
+            <div style="font-size: 11px; color: #999;">方法: ${engine.method || 'GET'}${engine.headers ? ' | 有自定义Headers' : ''}</div>
           </div>
-          <button class="btn-danger delete-engine-btn" data-id="${engine.id}">删除</button>
+          <button class="auto-web-btn auto-web-btn-danger delete-engine-btn" data-id="${engine.id}">删除</button>
         </div>
-      `
-        )
-        .join("");
+      `).join('');
 
-      enginesList.querySelectorAll(".delete-engine-btn").forEach((btn) => {
+      enginesList.querySelectorAll('.delete-engine-btn').forEach(btn => {
         btn.onclick = async () => {
-          state.customEngines = state.customEngines.filter((e) => e.id !== btn.dataset.id);
+          state.customEngines = state.customEngines.filter(e => e.id !== btn.dataset.id);
           await saveState(roche);
           renderEngines();
           roche.ui.toast("✅ 已删除");
@@ -416,6 +578,8 @@
       });
     }
 
+    backBtn.onclick = () => roche.ui.closeApp();
+    
     saveProxyBtn.onclick = async () => {
       const url = proxyInput.value.trim();
       if (!url) {
@@ -430,27 +594,43 @@
     addEngineBtn.onclick = async () => {
       const name = engineNameInput.value.trim();
       const url = engineUrlInput.value.trim();
+      const method = engineMethodSelect.value;
+      const headersText = engineHeadersInput.value.trim();
 
       if (!name || !url) {
-        roche.ui.toast("⚠️ 请填写完整信息");
+        roche.ui.toast("⚠️ 请填写引擎名称和URL");
         return;
       }
 
-      if (!url.includes("{query}")) {
-        roche.ui.toast("⚠️ URL 必须包含 {query}");
+      if (!url.includes("{query}") && !url.includes("{query_raw}")) {
+        roche.ui.toast("⚠️ URL 必须包含 {query} 或 {query_raw}");
         return;
+      }
+
+      let headers = null;
+      if (headersText) {
+        try {
+          headers = JSON.parse(headersText);
+        } catch (e) {
+          roche.ui.toast("⚠️ Headers 格式错误，必须是有效的 JSON");
+          return;
+        }
       }
 
       state.customEngines.push({
         id: `custom_${Date.now()}`,
         name,
         url,
+        method,
+        headers
       });
 
       await saveState(roche);
       renderEngines();
       engineNameInput.value = "";
       engineUrlInput.value = "";
+      engineMethodSelect.value = "GET";
+      engineHeadersInput.value = "";
       roche.ui.toast("✅ 已添加");
     };
 
@@ -458,353 +638,22 @@
       state.searchCache = {};
       await saveState(roche);
       roche.ui.toast("✅ 缓存已清空");
-      setTimeout(() => {
-        roche.ui.closeApp();
-        roche.ui.openApp("settings-app");
-      }, 500);
     };
 
     renderEngines();
   }
 
   // ============================================================
-  // 样式
-  // ============================================================
-
-  const styles = `
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-
-      .search-container, .settings-container {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        font-family: system-ui, -apple-system, sans-serif;
-        background: #f5f7fa;
-      }
-
-      .header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 24px 20px;
-      }
-
-      .header h1 {
-        margin: 0;
-        font-size: 24px;
-        font-weight: 600;
-      }
-
-      .header p {
-        margin: 8px 0 0;
-        opacity: 0.9;
-        font-size: 14px;
-      }
-
-      .content {
-        flex: 1;
-        overflow-y: auto;
-        padding: 20px;
-      }
-
-      .search-box {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      }
-
-      .engine-select {
-        width: 100%;
-        padding: 12px;
-        border: 2px solid #e0e7ff;
-        border-radius: 8px;
-        font-size: 14px;
-        margin-bottom: 12px;
-        cursor: pointer;
-        transition: border-color 0.3s;
-      }
-
-      .engine-select:focus {
-        outline: none;
-        border-color: #667eea;
-      }
-
-      .search-input {
-        width: 100%;
-        padding: 14px;
-        border: 2px solid #e0e7ff;
-        border-radius: 8px;
-        font-size: 15px;
-        transition: border-color 0.3s;
-      }
-
-      .search-input:focus {
-        outline: none;
-        border-color: #667eea;
-      }
-
-      .btn-primary {
-        width: 100%;
-        margin-top: 12px;
-        padding: 14px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-size: 16px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: transform 0.2s, box-shadow 0.3s;
-      }
-
-      .btn-primary:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-      }
-
-      .btn-secondary {
-        padding: 10px 20px;
-        background: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s;
-      }
-
-      .btn-secondary:hover {
-        background: #45a049;
-      }
-
-      .btn-danger {
-        padding: 8px 16px;
-        background: #f44336;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.3s;
-      }
-
-      .btn-danger:hover {
-        background: #d32f2f;
-      }
-
-      .loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 60px 20px;
-      }
-
-      .spinner {
-        width: 50px;
-        height: 50px;
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #667eea;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-      }
-
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-
-      .loading p {
-        margin-top: 20px;
-        font-size: 16px;
-        color: #666;
-      }
-
-      .results-section {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      }
-
-      .results-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 16px;
-      }
-
-      .results-header h3 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 600;
-        color: #333;
-      }
-
-      .results-content {
-        max-height: 500px;
-        overflow-y: auto;
-      }
-
-      .result-item {
-        padding: 16px;
-        border-bottom: 1px solid #f0f0f0;
-      }
-
-      .result-item:last-child {
-        border-bottom: none;
-      }
-
-      .result-title {
-        font-weight: 600;
-        color: #1a73e8;
-        margin-bottom: 6px;
-        font-size: 15px;
-      }
-
-      .result-url {
-        font-size: 13px;
-        color: #5f6368;
-        margin-bottom: 8px;
-        word-break: break-all;
-      }
-
-      .result-snippet {
-        font-size: 14px;
-        color: #666;
-        line-height: 1.6;
-      }
-
-      .history-section, .setting-section {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      }
-
-      .section-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 16px;
-      }
-
-      .section-header h3, .setting-section h3 {
-        margin: 0 0 16px;
-        font-size: 16px;
-        font-weight: 600;
-        color: #333;
-      }
-
-      .history-list, .engines-list {
-        max-height: 300px;
-        overflow-y: auto;
-      }
-
-      .history-item {
-        padding: 12px;
-        border-bottom: 1px solid #f0f0f0;
-        cursor: pointer;
-        transition: background 0.2s;
-      }
-
-      .history-item:hover {
-        background: #f8f9fa;
-      }
-
-      .history-query {
-        font-weight: 500;
-        color: #333;
-        margin-bottom: 4px;
-      }
-
-      .history-meta {
-        font-size: 12px;
-        color: #999;
-      }
-
-      .empty-text {
-        text-align: center;
-        color: #999;
-        padding: 20px;
-      }
-
-      .input-field {
-        width: 100%;
-        padding: 12px;
-        border: 2px solid #e0e7ff;
-        border-radius: 8px;
-        font-size: 14px;
-        margin-bottom: 12px;
-        transition: border-color 0.3s;
-      }
-
-      .input-field:focus {
-        outline: none;
-        border-color: #667eea;
-      }
-
-      .info-text {
-        margin: 0 0 12px;
-        font-size: 14px;
-        color: #666;
-      }
-
-      .add-engine-form {
-        padding: 16px;
-        background: #f5f5f5;
-        border-radius: 8px;
-        margin-top: 16px;
-      }
-
-      .add-engine-form .input-field {
-        margin-bottom: 8px;
-      }
-
-      .engine-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px;
-        background: #f9f9f9;
-        border-radius: 8px;
-        margin-bottom: 8px;
-      }
-
-      .engine-name {
-        font-weight: 600;
-        color: #333;
-        margin-bottom: 4px;
-      }
-
-      .engine-url {
-        font-size: 12px;
-        color: #666;
-        word-break: break-all;
-      }
-    </style>
-  `;
-
-  // ============================================================
-  // 注册插件
+  // 插件注册
   // ============================================================
 
   window.RochePlugin.register({
     id: PLUGIN_ID,
     name: "智能联网助手",
     version: VERSION,
-    description: "AI 自动联网搜索，支持缓存和自定义引擎",
+    description: "AI 自动联网搜索，支持高度自定义引擎",
     author: "zxinyi404-maker",
 
-    // Chat Tools - AI 可以自动调用
     chat: {
       tools: [
         {
@@ -816,11 +665,6 @@
               query: {
                 type: "string",
                 description: "搜索关键词"
-              },
-              engine: {
-                type: "string",
-                description: "搜索引擎（默认 duckduckgo）",
-                enum: ["duckduckgo"]
               }
             },
             required: ["query"]
@@ -828,29 +672,22 @@
           handler: async (args, context) => {
             try {
               await loadState(context.roche);
+              const { query } = args;
+              const data = await searchDuckDuckGo(query);
 
-              const { query, engine = "duckduckgo" } = args;
+              addHistory(query, "DuckDuckGo (AI)");
+              await saveState(context.roche);
 
-              if (engine === "duckduckgo") {
-                const data = await searchDuckDuckGo(query);
-
-                // 添加历史记录
-                addHistory(query, "DuckDuckGo");
-                await saveState(context.roche);
-
-                return {
-                  success: true,
-                  engine: "DuckDuckGo",
-                  fromCache: data.fromCache,
-                  results: data.results.slice(0, 5).map(r => ({
-                    title: r.title,
-                    url: r.url,
-                    snippet: r.snippet
-                  }))
-                };
-              }
-
-              return { success: false, error: "不支持的搜索引擎" };
+              return {
+                success: true,
+                engine: "DuckDuckGo",
+                fromCache: data.fromCache,
+                results: data.results.slice(0, 5).map(r => ({
+                  title: r.title,
+                  url: r.url,
+                  snippet: r.snippet
+                }))
+              };
             } catch (e) {
               return { success: false, error: e.message };
             }
@@ -866,14 +703,11 @@
         icon: "search",
         async mount(container, roche) {
           await loadState(roche);
-          container.innerHTML = styles;
-          const wrapper = document.createElement("div");
-          container.appendChild(wrapper);
-          createSearchUI(wrapper, roche);
+          createSearchPage(container, roche);
         },
         async unmount(container) {
           container.innerHTML = "";
-        },
+        }
       },
       {
         id: "settings-app",
@@ -881,15 +715,12 @@
         icon: "settings",
         async mount(container, roche) {
           await loadState(roche);
-          container.innerHTML = styles;
-          const wrapper = document.createElement("div");
-          container.appendChild(wrapper);
-          createSettingsUI(wrapper, roche);
+          createSettingsPage(container, roche);
         },
         async unmount(container) {
           container.innerHTML = "";
-        },
-      },
-    ],
+        }
+      }
+    ]
   });
 })();
