@@ -416,7 +416,7 @@
           return [];
         }
 
-        // 如果启用了，返回完整工具列表
+        // 极简工具列表：只保留最常用的2个，减少干扰
         return [
         {
           id: "web_search",
@@ -424,8 +424,12 @@
           parameters: { query: "string" },
           async execute(args, ctx) {
             if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            const query = String(args?.query || "").trim();
-            return await executeWithCache(ctx.roche || window.Roche, "web_search", query, () => toolWebSearch(query));
+            try {
+              const query = String(args?.query || "").trim();
+              return await executeWithCache(ctx.roche || window.Roche, "web_search", query, () => toolWebSearch(query));
+            } catch (e) {
+              return { error: e.message };
+            }
           },
         },
         {
@@ -434,71 +438,16 @@
           parameters: { url: "string" },
           async execute(args, ctx) {
             if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            const url = String(args?.url || "").trim();
-            // 网页内容不缓存（每次都是最新）
-            const result = await toolOpenPage(url);
-            addToHistory("open_page", url, false);
-            updateStats("open_page", false);
-            return result;
-          },
-        },
-        {
-          id: "zhihu_search",
-          description: "搜索知乎内容（问题、回答、文章）。适合查找中文深度讨论和专业解答。参数：query（搜索关键词），type（可选：all/question/answer/article）",
-          parameters: { query: "string", type: "string" },
-          async execute(args, ctx) {
-            if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            const query = String(args?.query || "").trim();
-            const type = args?.type || "all";
-            return await executeWithCache(ctx.roche || window.Roche, "zhihu_search", `${type}:${query}`, () => toolZhihuSearch(query, type));
-          },
-        },
-        {
-          id: "reddit_search",
-          description: "搜索 Reddit 帖子和讨论。适合查找英文社区讨论、评测、经验分享。参数：query（搜索关键词），sort（可选：relevance/hot/top/new）",
-          parameters: { query: "string", sort: "string" },
-          async execute(args, ctx) {
-            if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            const query = String(args?.query || "").trim();
-            const sort = args?.sort || "relevance";
-            return await executeWithCache(ctx.roche || window.Roche, "reddit_search", `${sort}:${query}`, () => toolRedditSearch(query, sort));
-          },
-        },
-        {
-          id: "youtube_search",
-          description: "搜索 YouTube 视频。适合查找视频教程、评测、娱乐内容。参数：query（搜索关键词）",
-          parameters: { query: "string" },
-          async execute(args, ctx) {
-            if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            const query = String(args?.query || "").trim();
-            return await executeWithCache(ctx.roche || window.Roche, "youtube_search", query, () => toolYouTubeSearch(query));
-          },
-        },
-        {
-          id: "ao3_search",
-          description: "搜索 AO3 同人作品。适合查找小说、fanfic。参数：query（搜索关键词），sort（可选：relevance/kudos/hits/date）",
-          parameters: { query: "string", sort: "string" },
-          async execute(args, ctx) {
-            if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            const query = String(args?.query || "").trim();
-            const sort = args?.sort || "relevance";
-            return await executeWithCache(ctx.roche || window.Roche, "ao3_search", `${sort}:${query}`, () => toolAO3Search(query, sort));
-          },
-        },
-        {
-          id: "custom_search",
-          description: "使用自定义搜索引擎搜索。适合用户配置的特定网站搜索。参数：engineId（引擎ID），query（搜索关键词）",
-          parameters: { engineId: "string", query: "string" },
-          async execute(args, ctx) {
-            if (!globalState.enabled || !globalState.proxyUrl) return { error: "联网功能未启用" };
-            const engineId = String(args?.engineId || "").trim();
-            const query = String(args?.query || "").trim();
-
-            if (!engineId || !query) {
-              return { error: "缺少必需参数" };
+            try {
+              const url = String(args?.url || "").trim();
+              const result = await toolOpenPage(url);
+              addToHistory("open_page", url, false);
+              updateStats("open_page", false);
+              persistState(ctx.roche || window.Roche).catch(err => console.error("[保存失败]", err));
+              return result;
+            } catch (e) {
+              return { error: e.message };
             }
-
-            return await executeWithCache(ctx.roche || window.Roche, "custom_search", `${engineId}:${query}`, () => toolCustomSearch(engineId, query));
           },
         },
       ]; // 工具列表结束
