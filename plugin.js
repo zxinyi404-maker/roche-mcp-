@@ -17,6 +17,7 @@
     proxyUrl: "",
     enabled: true,
     enableCache: true,
+    enableChatTools: false, // 默认禁用聊天工具，避免干扰消息
     initialized: false,
     cache: {}, // 缓存：key -> {data, timestamp}
     history: [], // 历史：[{tool, query, timestamp, cached}]
@@ -95,6 +96,7 @@
       await roche.storage.set(`${PLUGIN_ID}:proxyUrl`, globalState.proxyUrl);
       await roche.storage.set(`${PLUGIN_ID}:enabled`, globalState.enabled);
       await roche.storage.set(`${PLUGIN_ID}:enableCache`, globalState.enableCache);
+      await roche.storage.set(`${PLUGIN_ID}:enableChatTools`, globalState.enableChatTools);
       globalState.isDirty = false;
     } catch (e) {
       console.error("[持久化失败]", e);
@@ -378,6 +380,7 @@
       const savedProxy = await roche.storage.get(`${PLUGIN_ID}:proxyUrl`);
       const savedEnabled = await roche.storage.get(`${PLUGIN_ID}:enabled`);
       const savedEnableCache = await roche.storage.get(`${PLUGIN_ID}:enableCache`);
+      const savedEnableChatTools = await roche.storage.get(`${PLUGIN_ID}:enableChatTools`);
       const savedCache = await roche.storage.get(`${PLUGIN_ID}:cache`);
       const savedHistory = await roche.storage.get(`${PLUGIN_ID}:history`);
       const savedStats = await roche.storage.get(`${PLUGIN_ID}:stats`);
@@ -386,6 +389,7 @@
       if (savedProxy) globalState.proxyUrl = savedProxy;
       if (savedEnabled !== undefined) globalState.enabled = savedEnabled;
       if (savedEnableCache !== undefined) globalState.enableCache = savedEnableCache;
+      if (savedEnableChatTools !== undefined) globalState.enableChatTools = savedEnableChatTools;
       if (savedCache) globalState.cache = savedCache;
       if (savedHistory) globalState.history = savedHistory;
       if (savedStats) globalState.stats = savedStats;
@@ -414,7 +418,15 @@
 
     chat: {
       scope: {},
-      tools: [
+      // 动态工具列表：只在启用时注册
+      get tools() {
+        // 如果未启用聊天工具，返回空数组
+        if (!globalState.enableChatTools) {
+          return [];
+        }
+
+        // 如果启用了，返回完整工具列表
+        return [
         {
           id: "web_search",
           description: "通用网页搜索（DuckDuckGo）。搜索最新信息、新闻、常规问题时使用。参数：query（搜索关键词）",
@@ -482,7 +494,8 @@
             return await executeWithCache(ctx.roche || window.Roche, "ao3_search", `${sort}:${query}`, () => toolAO3Search(query, sort));
           },
         },
-      ],
+      ]; // 工具列表结束
+      },
     },
 
     apps: [
@@ -522,6 +535,14 @@
                     <input id="cache-checkbox" type="checkbox" ${globalState.enableCache ? "checked" : ""} style="width: 20px; height: 20px; margin-right: 10px; cursor: pointer;" />
                     <span style="font-weight: 600;">启用缓存（24小时）</span>
                   </label>
+                  <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input id="chat-tools-checkbox" type="checkbox" ${globalState.enableChatTools ? "checked" : ""} style="width: 20px; height: 20px; margin-right: 10px; cursor: pointer;" />
+                    <span style="font-weight: 600;">启用聊天工具（⚠️ 可能干扰消息显示）</span>
+                  </label>
+                  <div style="margin-left: 30px; font-size: 12px; color: #666; line-height: 1.5;">
+                    启用后，AI 可以在对话中自动调用搜索功能。<br/>
+                    如果遇到消息不显示、通知异常等问题，请关闭此选项。
+                  </div>
                 </div>
 
                 <button id="save-btn" style="width: 100%; padding: 14px; background: #007aff; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; margin-bottom: 16px;">保存设置</button>
@@ -583,6 +604,7 @@
             const input = container.querySelector("#proxy-input");
             const enabledCheckbox = container.querySelector("#enabled-checkbox");
             const cacheCheckbox = container.querySelector("#cache-checkbox");
+            const chatToolsCheckbox = container.querySelector("#chat-tools-checkbox");
             const url = input.value.trim();
 
             if (!url) {
@@ -593,12 +615,14 @@
             globalState.proxyUrl = url;
             globalState.enabled = enabledCheckbox.checked;
             globalState.enableCache = cacheCheckbox.checked;
+            globalState.enableChatTools = chatToolsCheckbox.checked;
 
             await roche.storage.set(`${PLUGIN_ID}:proxyUrl`, url);
             await roche.storage.set(`${PLUGIN_ID}:enabled`, globalState.enabled);
             await roche.storage.set(`${PLUGIN_ID}:enableCache`, globalState.enableCache);
+            await roche.storage.set(`${PLUGIN_ID}:enableChatTools`, globalState.enableChatTools);
 
-            roche.ui.toast("✅ 保存成功！");
+            roche.ui.toast("✅ 保存成功！" + (chatToolsCheckbox.checked ? "" : " 请刷新页面使聊天工具设置生效。"));
           };
 
           container.querySelector("#clear-stats-btn").onclick = async () => {
